@@ -46,9 +46,9 @@ services:
     depends_on:
       - api
     volumes:
-      - ./api/docker/varnish/conf:/usr/local/etc/varnish:ro
+      - ./api/docker/varnish/conf:/etc/varnish:ro
     tmpfs:
-      - /usr/local/var/varnish:exec
+      - /var/lib/varnish:exec
     ports:
       - "8081:80"
 

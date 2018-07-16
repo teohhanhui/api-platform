@@ -3,7 +3,6 @@
 
 ARG PHP_VERSION=7.2
 ARG NGINX_VERSION=1.15
-ARG VARNISH_VERSION=6.0
 
 FROM php:${PHP_VERSION}-fpm-alpine AS api_platform_php
 
@@ -95,6 +94,21 @@ WORKDIR /srv/api
 
 COPY --from=api_platform_php /srv/api/public public/
 
-FROM cooptilleuls/varnish:${VARNISH_VERSION} AS api_platform_varnish
+FROM alpine:3.8 AS api_platform_varnish
 
-COPY docker/varnish/conf/default.vcl /usr/local/etc/varnish/default.vcl
+RUN set -eux; \
+	apk add --no-cache \
+		varnish \
+	;
+
+COPY docker/varnish/conf/default.vcl /etc/varnish/default.vcl
+
+WORKDIR /var/lib/varnish
+RUN chown -R varnish:varnish /var/lib/varnish
+VOLUME /var/lib/varnish
+
+COPY docker/varnish/docker-entrypoint.sh /usr/local/bin/docker-entrypoint
+ENTRYPOINT ["docker-entrypoint"]
+
+EXPOSE 80
+CMD ["varnishd"]
