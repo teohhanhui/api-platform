@@ -5,6 +5,7 @@ on:
   pull_request:
 
 env:
+  DOCKER_BUILDKIT_IMAGE: 'moby/buildkit@sha256:622c3ad5bf7533351a5a50388a2ecf8957ba225f34298cc0035ddf9fac4cce0d'
   DOCKER_BUILDX_VERSION: '0.3.1'
   DOCKER_COMPOSE_VERSION: '1.25.4'
   DOCKER_REGISTRY: quay.io
@@ -16,6 +17,8 @@ jobs:
     container:
       image: docker:${{ matrix.docker }}
       env:
+        COMPOSE_DOCKER_CLI_BUILD: '1'
+        DOCKER_BUILDKIT: '1'
         DOCKER_CERT_PATH: /certs/client
         DOCKER_CLI_EXPERIMENTAL: enabled
         DOCKER_HOST: tcp://docker:2376
@@ -49,6 +52,15 @@ jobs:
           apk add \
             curl \
             jq \
+      - name: Enable debug mode
+        run: |
+          mkdir ~/.docker
+          echo '{"debug": true}' > ~/.docker/config.json
+          docker context create --docker host=unix:///var/run/docker.sock host
+          docker --context host exec ${{ job.services.docker.id }} sh -c 'echo '\''{"debug": true}'\'' > /etc/docker/daemon.json'
+          docker --context host kill --signal=SIGHUP ${{ job.services.docker.id }}
+          docker version
+          docker info
       - name: Install Docker Buildx
         run: |
           mkdir -p ~/.docker/cli-plugins
@@ -62,7 +74,8 @@ jobs:
       - name: Create builder instance
         run: |
           docker context create default_tls
-          docker buildx create --driver docker-container --driver-opt image=moby/buildkit:master,network=host --use default_tls
+          docker buildx create --driver docker-container --driver-opt image=${DOCKER_BUILDKIT_IMAGE},network=host --use default_tls
+          docker buildx install
       - name: Build images
         run: |
           docker buildx bake \
@@ -75,6 +88,7 @@ jobs:
             --set client.output=type=docker \
             --set php.args.BUILDKIT_INLINE_CACHE=1 \
             --set php.output=type=docker \
+        timeout-minutes: 5
       - name: Validate composer.json
         run: |
           if jq -e '.extra.symfony.id != null' api/composer.json > /dev/null; then
@@ -115,6 +129,9 @@ jobs:
             api \
             client \
             php \
+      - name: Show Docker daemon logs
+        if: failure()
+        run: docker --context host logs ${{ job.services.docker.id }}
 
   docker-build-test-deploy-prod:
     name: Docker build/test/deploy (Docker ${{ matrix.docker }}) (production)
@@ -122,6 +139,8 @@ jobs:
     container:
       image: docker:${{ matrix.docker }}
       env:
+        COMPOSE_DOCKER_CLI_BUILD: '1'
+        DOCKER_BUILDKIT: '1'
         DOCKER_CERT_PATH: /certs/client
         DOCKER_CLI_EXPERIMENTAL: enabled
         DOCKER_HOST: tcp://docker:2376
@@ -188,7 +207,8 @@ jobs:
       - name: Create builder instance
         run: |
           docker context create default_tls
-          docker buildx create --driver docker-container --driver-opt image=moby/buildkit:master,network=host --use default_tls
+          docker buildx create --driver docker-container --driver-opt image=${DOCKER_BUILDKIT_IMAGE},network=host --use default_tls
+          docker buildx install
       - name: Fetch production setup
         run: wget -O - https://github.com/api-platform/docker-compose-prod/archive/master.tar.gz | tar -xzf - && mv docker-compose-prod-master docker-compose-prod
       - name: Build images
